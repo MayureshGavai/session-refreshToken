@@ -27,7 +27,12 @@
             <button onclick="logoutUser()" class="btn text-white" style="font-size: 14px; background-color: rgb(202, 37, 37);">Logout</button>
         </div>
     </div>
-    <h1 class="mt-4 fs-4">Home Page</h1>
+    <div class="container">
+        <h1 class="mt-4 fs-4">Home Page</h1>
+        <div class="d-flex justify-content-center align-items-center">
+            <button onclick="fetchData()" class="mx-auto w-fit btn text-white" style="background-color: black;">Call Api</button>
+        </div>
+    </div>
     <script>
         const logoutUser = async () => {
             try {
@@ -45,6 +50,31 @@
                 console.error('Error during logout:', error);
             }
         }
+
+        const fetchData = async () => {
+            try {
+                const response = await fetch('/data', {
+                    method: 'GET',
+                    credentials: 'same-origin'
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(errorText || 'Error fetching data');
+                }
+                if(response.redirected){
+                    alert('Session is invalid or has expired')
+                    window.location.href = response.url
+                }else{
+                    const data = await response.json();
+                    alert(data.message);
+                }
+            } catch (error) {
+                console.error('Error during fetchData:', error);
+                alert(`Fetch data failed: ${error.message}`);
+            }
+        };
+
     </script>
 </body>
 </html>

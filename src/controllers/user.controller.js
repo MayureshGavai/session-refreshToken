@@ -1,6 +1,17 @@
 import bcrypt from 'bcryptjs'
 import { newUserQuery, signinUserQuery } from '../model/user.model.js'
 import { v4 as uuidv4 } from 'uuid'
+import { getAsync, setAsync, delAsync } from '../config/redis.js'
+import { SESSION_PREFIX, USER_SESSION_PREFIX } from '../utils/constants.js'
+
+
+
+const invalidateExistingSession = async (userId) => {
+    const existingSessionId = await getAsync(`${USER_SESSION_PREFIX}${userId}`)
+    if(existingSessionId){
+        await delAsync(`${SESSION_PREFIX}${existingSessionId}`)
+    }
+}
 
 export const signupController = async (req,res) => {
     try{
@@ -22,10 +33,7 @@ export const signupController = async (req,res) => {
 export const signinController = async (req,res) => {
     try {
         const { username, password } = req.body;
-        const user = {
-            username: username,
-            password: password
-        };
+        const user = { username, password };
 
         if (!user.username || !user.password) {
             return res.redirect('/login?error=Username and password are required');
@@ -36,19 +44,18 @@ export const signinController = async (req,res) => {
         if (!result.success) {
             return res.redirect(`/login?error=${encodeURIComponent(result.message)}`);
         }
-        // console.log(result.user)
-        // Assuming you set the user in session after successful login
-        
-        const accessToken = uuidv4()
-        const refreshToken = uuidv4()
-        
-        req.session.userId = result.user.id
-        req.session.accessToken = accessToken
-        req.session.refreshToken = refreshToken
 
-        res.cookie('session_id', req.sessionID, {httpOnly : true})
+        await invalidateExistingSession(result.user.id);
 
-        // Redirect to the index page after successful login
+        const accessToken = uuidv4();
+        const refreshToken = uuidv4();
+
+        req.session.userId = result.user.id;
+        req.session.accessToken = accessToken;
+        req.session.refreshToken = refreshToken;
+
+        await setAsync(`${USER_SESSION_PREFIX}${result.user.id}`, req.sessionID);
+
         return res.redirect('/');
     } catch (err) {
         console.log(err.message);
@@ -58,19 +65,28 @@ export const signinController = async (req,res) => {
 
 
 export const signoutController = async (req,res) => {
-    try{
-        req.session.destroy((err) => {
-            if(err){
-                console.log(err.message)
-                // return res.redirect('/?error=An internal error occurred')
-            }
-        })
+    try {
+        if (req.session) {
+            // Destroy the session in Redis
+            const sessionId = req.sessionID;
+            await delAsync(`${SESSION_PREFIX}${sessionId}`);
 
-        res.clearCookie('session_id')
-        res.clearCookie('connect.sid', { path: '/' });
+            // Destroy the session in the Express app
+            req.session.destroy((err) => {
+                if (err) {
+                    console.error('Error destroying session:', err);
+                    return res.status(500).json({ error: 'Failed to destroy session' });
+                }
 
-        return res.redirect('/login')
-    }catch(err){
-        console.log(err.message)
+                res.clearCookie('connect.sid');
+                res.redirect('/login');
+            });
+        } else {
+            res.redirect('/login');
+        }
+    } catch (err) {
+        console.error('Error during signout:', err);
+        res.status(500).json({ error: 'An error occurred during signout' });
     }
 }
+

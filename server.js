@@ -1,72 +1,62 @@
-import express from 'express'
-import { configDotenv } from 'dotenv'
-import morgan from 'morgan';
+import express from 'express';
+import { configDotenv } from 'dotenv';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import userRoutes from './src/routes/users.route.js'
-import redis from 'redis'
-import connectRedis from 'connect-redis'
+import userRoutes from './src/routes/users.route.js';
+import dataRoutes from './src/routes/data.route.js';
+import { redisClient } from './src/config/redis.js'; // Import the shared Redis client
 import session from 'express-session';
+import connectRedis from 'connect-redis';
 
-configDotenv()
+configDotenv();
 
-const app = express()
-// app.use(morgan('dev'));
-const RedisStore = new connectRedis(session)
-const client = redis.createClient({ legacyMode: true })
-
-client.on('error', (err) => {
-    console.error('Redis Client Error', err);
-});
-
-// Connect to Redis
-await client.connect();
+const app = express();
+const RedisStore = connectRedis(session);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser())
+app.use(cookieParser());
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'src/views'));
-app.use(express.static('./public'))
+app.use(express.static('./public'));
 
 app.use(
     session({
-      store: new RedisStore({ client: client }),
-      secret: 'secret-key',
-      resave: false,
-      saveUninitialized: false, // Avoid creating sessions for unauthenticated users
-      cookie: {
-        secure: false,
-        httpOnly: true,
-        maxAge: 2000 * 24 * 60 * 60, // Adjust as needed
-      },
+        store: new RedisStore({ client: redisClient }),
+        secret: process.env.SESSION_SECRET_KEY,
+        resave: false,
+        saveUninitialized: false, // Avoid creating sessions for unauthenticated users
+        cookie: {
+            secure: false,
+            httpOnly: true,
+            maxAge: 2000 * 24 * 60 * 60, // Adjust as needed
+        },
     })
 );
 
+const PORT = process.env.PORT || 3000;
 
-const PORT = process.env.PORT || 3000
-
-app.use(userRoutes)
+app.use(userRoutes);
+app.use(dataRoutes);
 
 app.get('/login', (req, res) => {
     const error = req.query.error || '';
     res.render('login', { error });
-})
+});
 
 app.get('/register', (req, res) => {
-    res.render('register')
-})
+    res.render('register');
+});
 
 app.get('/', (req, res) => {
-    res.render('index')
-})
-
+    res.render('index');
+});
 
 app.listen(PORT, () => {
-    console.log(`server is running on ${PORT}`)
-})
+    console.log(`Server is running on ${PORT}`);
+});
