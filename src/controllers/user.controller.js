@@ -2,13 +2,23 @@ import bcrypt from 'bcryptjs'
 import { newUserQuery, signinUserQuery } from '../model/user.model.js'
 import { v4 as uuidv4 } from 'uuid'
 import { getAsync, setAsync, delAsync } from '../config/redis.js'
-import { SESSION_PREFIX, USER_SESSION_PREFIX } from '../utils/constants.js'
+import { ACCESS_TOKEN_EXPIRY, REFRESH_TOKEN_EXPIRY, SESSION_PREFIX, USER_SESSION_PREFIX } from '../utils/constants.js'
 
 
 
 const invalidateExistingSession = async (userId) => {
     const existingSessionId = await getAsync(`${USER_SESSION_PREFIX}${userId}`)
     if(existingSessionId){
+
+        // Retrieve old tokens from session 
+        const oldAccessToken = await getAsync(`${SESSION_PREFIX}${existingSessionId}:accessToken`)
+        const oldRefreshToken = await getAsync(`${SESSION_PREFIX}${existingSessionId}:refreshToken`)
+
+        // Delete old tokens if exists 
+        if (oldAccessToken) await delAsync(`accessToken:${oldAccessToken}`)
+        if (oldRefreshToken) await delAsync(`refreshToken:${oldRefreshToken}`)
+
+        // Invalidate old session 
         await delAsync(`${SESSION_PREFIX}${existingSessionId}`)
     }
 }
@@ -55,6 +65,10 @@ export const signinController = async (req,res) => {
         req.session.refreshToken = refreshToken;
 
         await setAsync(`${USER_SESSION_PREFIX}${result.user.id}`, req.sessionID);
+        await setAsync(`accessToken:${accessToken}`, result.user.id, 'EX', ACCESS_TOKEN_EXPIRY)
+        await setAsync(`refreshToken:${refreshToken}`, result.user.id, 'EX', REFRESH_TOKEN_EXPIRY)
+
+        res.cookie('accessToken', accessToken, {httpOnly : true})
 
         return res.redirect('/');
     } catch (err) {
@@ -78,8 +92,9 @@ export const signoutController = async (req,res) => {
                     return res.status(500).json({ error: 'Failed to destroy session' });
                 }
 
-                res.clearCookie('connect.sid');
-                res.redirect('/login');
+                res.clearCookie('connect.sid')
+                res.clearCookie('accessToken')
+                res.redirect('/login')
             });
         } else {
             res.redirect('/login');
