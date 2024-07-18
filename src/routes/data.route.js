@@ -5,6 +5,7 @@ import { validateSession, validateToken } from '../middlewares/auth.middleware.j
 const router = express.Router();
 
 router.get('/data', validateSession, validateToken, fetchDataController);
+// router.get('/data', validateSession, fetchDataController);
 
 
 export default router;

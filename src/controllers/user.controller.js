@@ -5,18 +5,20 @@ import { getAsync, setAsync, delAsync } from '../config/redis.js'
 import { ACCESS_TOKEN_EXPIRY, REFRESH_TOKEN_EXPIRY, SESSION_PREFIX, USER_SESSION_PREFIX } from '../utils/constants.js'
 
 
-
 const invalidateExistingSession = async (userId) => {
     const existingSessionId = await getAsync(`${USER_SESSION_PREFIX}${userId}`)
     if(existingSessionId){
 
-        // Retrieve old tokens from session 
-        const oldAccessToken = await getAsync(`${SESSION_PREFIX}${existingSessionId}:accessToken`)
-        const oldRefreshToken = await getAsync(`${SESSION_PREFIX}${existingSessionId}:refreshToken`)
+        // // Retrieve old tokens from session 
+        // const oldAccessToken = await getAsync(`${SESSION_PREFIX}${existingSessionId}:accessToken`)
+        // const oldRefreshToken = await getAsync(`${SESSION_PREFIX}${existingSessionId}:refreshToken`)
 
-        // Delete old tokens if exists 
-        if (oldAccessToken) await delAsync(`accessToken:${oldAccessToken}`)
-        if (oldRefreshToken) await delAsync(`refreshToken:${oldRefreshToken}`)
+        // // Delete old tokens if exists 
+        // if (oldAccessToken) await delAsync(`accessToken:${oldAccessToken}`)
+        // if (oldRefreshToken) await delAsync(`refreshToken:${oldRefreshToken}`)
+
+        await delAsync(`accessToken:${userId}`)
+        await delAsync(`refreshToken:${userId}`)
 
         // Invalidate old session 
         await delAsync(`${SESSION_PREFIX}${existingSessionId}`)
@@ -51,10 +53,6 @@ export const signinController = async (req,res) => {
 
         const result = await signinUserQuery(user);
 
-        if (!result.success) {
-            return res.redirect(`/login?error=${encodeURIComponent(result.message)}`);
-        }
-
         await invalidateExistingSession(result.user.id);
 
         const accessToken = uuidv4();
@@ -65,12 +63,18 @@ export const signinController = async (req,res) => {
         req.session.refreshToken = refreshToken;
 
         await setAsync(`${USER_SESSION_PREFIX}${result.user.id}`, req.sessionID);
-        await setAsync(`accessToken:${accessToken}`, result.user.id, 'EX', ACCESS_TOKEN_EXPIRY)
-        await setAsync(`refreshToken:${refreshToken}`, result.user.id, 'EX', REFRESH_TOKEN_EXPIRY)
+        await setAsync(`accessToken:${result.user.id}`, accessToken, 'EX', ACCESS_TOKEN_EXPIRY)
+        await setAsync(`refreshToken:${result.user.id}`, refreshToken, 'EX', REFRESH_TOKEN_EXPIRY)
 
-        res.cookie('accessToken', accessToken, {httpOnly : true})
+        res.cookie('accessToken', accessToken, {
+            httpOnly: false,
+            secure : false,
+            sameSite : false,
+            path : '/'
+        })
 
         return res.redirect('/');
+
     } catch (err) {
         console.log(err.message);
         return res.redirect('/login?error=An internal error occurred');
@@ -81,10 +85,18 @@ export const signinController = async (req,res) => {
 export const signoutController = async (req,res) => {
     try {
         if (req.session) {
+            
+            const userId = req.session.userId
+            await delAsync(`accessToken:${userId}`)
+            await delAsync(`refreshToken:${userId}`)
+
             // Destroy the session in Redis
             const sessionId = req.sessionID;
             await delAsync(`${SESSION_PREFIX}${sessionId}`);
-
+            
+            // Destroy the userSession in Redis 
+            await delAsync(`${USER_SESSION_PREFIX}${userId}`)
+            
             // Destroy the session in the Express app
             req.session.destroy((err) => {
                 if (err) {
