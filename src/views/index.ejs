@@ -63,30 +63,52 @@
             try {
                 const accessToken = getCookie('accessToken')
 
-                const response = await fetch('/data', {
-                    method: 'GET',
-                    credentials: 'same-origin',
-                    headers : {
-                        'Authorization' : `Bearer ${accessToken}`
-                    }
-                });
-                
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(errorText || 'Error fetching data');
+                const [response1, response2] = await Promise.all([
+                    fetch('/data', {
+                        method: 'GET',
+                        credentials: 'same-origin',
+                        headers: {
+                            'Authorization': `Bearer ${accessToken}`
+                        }
+                    }),
+                    fetch('/data1', {
+                        method: 'GET',
+                        credentials: 'same-origin',
+                        headers: {
+                            'Authorization': `Bearer ${accessToken}`
+                        }
+                    })
+                ]);
+
+                if (!response1.ok) {
+                    const errorText = await response1.text();
+                    throw new Error(errorText || 'Error fetching data from /data');
                 }
-                if(response.redirected){
+
+                if (!response2.ok) {
+                    const errorText = await response2.text();
+                    throw new Error(errorText || 'Error fetching data from /data1');
+                }
+
+                if (response1.redirected) {
                     alert('Session is invalid or has expired')
-                    window.location.href = response.url
-                }else{
-                    const data = await response.json();
-                    alert(data.message);
+                    window.location.href = response1.url
+                } else {
+                    const data1 = await response1.json();
+                    alert(data1.message);
                 }
-            } catch (error) {
-                console.error('Error during fetchData:', error);
-                alert(`Fetch data failed: ${error.message}`);
+
+                if (response2.redirected) {
+                    alert('Session is invalid or has expired')
+                    window.location.href = response2.url
+                } else {
+                    const data2 = await response2.json();
+                    alert(data2.message);
+                }
+            }catch(error){
+                console.error('Error during fetchData1:',error)
             }
-        };
+        }
 
     </script>
 </body>
